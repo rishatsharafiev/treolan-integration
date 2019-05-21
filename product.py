@@ -12,8 +12,9 @@ def main():
     soap_api = TreoplanSoapApi()
     soap_api.get_client()
 
-    result_id = soap_api.get_products()
-    print(result_id)
+    positions = soap_api.get_products()
+    soap_api.batch_update(positions)
+
 
 if __name__ == '__main__':
     """Timeit 655.981519066001"""

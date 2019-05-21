@@ -74,10 +74,117 @@ class TreoplanSoapApi:
         root = etree.fromstring(result)
         positions = root.findall('.//position')
 
-        for position in positions[:10]:
-            print(position.get('articul'))
-
-        # for position in self.listRecursive(serialize_object(result), 'position'):
-        #     print(position)
+        self.mark_all_as_deleted()
+        self.mark_all_as_inactive()
         
-        return True
+        return positions
+
+    def mark_all_as_deleted(self):
+        sql_string = "UPDATE treoplan_product SET is_deleted=TRUE;"
+
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                cursor.execute(sql_string)
+                connection.commit()
+                return cursor.lastrowid
+        finally:
+            if connection:
+                connection.close()
+
+        return False
+
+    def mark_all_as_inactive(self):
+        sql_string = "UPDATE treoplan_product SET is_active=FALSE;"
+
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                cursor.execute(sql_string)
+                connection.commit()
+                return cursor.lastrowid
+        finally:
+            if connection:
+                connection.close()
+
+        return False
+
+    def update_or_create(self, cursor, product_dict):
+        sql_string = """INSERT INTO treoplan_product(articul, name, id, prid, vendor, currency, freenom, price, is_deleted, is_active)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, FALSE, TRUE)
+        ON DUPLICATE KEY UPDATE
+            name = %s,
+            id = %s,
+            prid = %s,
+            vendor = %s,
+            currency = %s,
+            freenom = %s,
+            price = %s,
+            is_deleted = FALSE,
+            is_active = TRUE;
+        """
+
+        prepared_statements = (
+            product_dict.get('articul'),
+            product_dict.get('name'),
+            product_dict.get('id'),
+            product_dict.get('prid'),
+            product_dict.get('vendor'),
+            product_dict.get('currency'),
+            product_dict.get('freenom'),
+            product_dict.get('price'),
+            product_dict.get('name'),
+            product_dict.get('id'),
+            product_dict.get('prid'),
+            product_dict.get('vendor'),
+            product_dict.get('currency'),
+            product_dict.get('freenom'),
+            product_dict.get('price'),
+        )
+
+        cursor.execute(sql_string, prepared_statements)
+
+    def batch_update(self, positions):
+        sql_string = """INSERT INTO price(article, kod, name, cena, valuta, nalichie, postavchik, img, data_dobavleniya) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURDATE());"""
+
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                for position in positions:
+
+                    counter = 0
+
+                    product_dict = {
+                        'articul': position.get('articul'),
+                        'name': position.get('name'),
+                        'id': position.get('id'),
+                        'prid': position.get('prid'),
+                        'vendor': position.get('vendor'),
+                        'currency': position.get('currency'),
+                        'freenom': position.get('freenom'),
+                        'price': position.get('price'),
+                    }
+                    self.update_or_create(cursor, product_dict)
+
+                    counter += 1
+                    if counter == 10000:
+                        connection.commit()
+                        counter = 0
+                
+                if counter != 0:
+                    connection.commit()
+        finally:
+            if connection:
+                connection.close()
+
+        return False
