@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-
+import math
+import pydash
 from zeep import Client, Settings
 from zeep.transports import Transport
 from zeep.helpers import serialize_object
@@ -260,3 +261,163 @@ class TreoplanSoapApi:
                 connection.close()
 
         return False
+
+
+    def get_active_products_count(self):
+        sql_string = """SELECT COUNT(*) FROM `treoplan_product`
+            WHERE `treoplan_product`.`is_deleted`=FALSE 
+                AND `treoplan_product`.`is_active`=TRUE;
+        """
+        
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                cursor.execute(sql_string)
+                result = cursor.fetchone()
+
+                return pydash.get(result, '0', 0)
+        finally:
+            if connection:
+                connection.close()
+
+        return False
+
+    def get_active_products(self, limit=1000, offset=0):
+        sql_string = """SELECT tp.articul, tp.prid, tp.currency, tp.name, tp.price, tp.freenom, ti.url
+            FROM treoplan_product tp
+            LEFT JOIN (
+                SELECT url, articul
+                FROM treoplan_image
+                WHERE id IN (
+                SELECT min(id) 
+                FROM treoplan_image
+                GROUP BY articul
+                )
+            ) ti ON tp.articul =  ti.articul
+            WHERE tp.is_deleted=FALSE AND tp.is_active=TRUE
+            LIMIT %s
+            OFFSET %s;"""
+        
+        prepared_statements = (
+            limit,
+            offset,
+        )
+
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                cursor.execute(sql_string, prepared_statements)
+                products = cursor.fetchall()
+
+                return [{
+                    'articul': product[0], 
+                    'prid': product[1],
+                    'currency': product[2],
+                    'name': product[3],
+                    'price': product[4] if product[4] else 0,
+                    'freenom': product[5] if product[5] else '',
+                    'url': product[6] if product[6] else '',
+                } for product in products]
+        finally:
+            if connection:
+                connection.close()
+
+        return False
+
+    def clear_price_by_supplier(self, supplier: str = 'ТРЕОЛАН'):
+        sql_string = """DELETE FROM `price` WHERE postavchik=%s;"""
+        
+        prepared_statements = (
+            supplier,
+        )
+
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                cursor.execute(sql_string, prepared_statements)
+                connection.commit()
+                return cursor.lastrowid
+        finally:
+            if connection:
+                connection.close()
+
+        return False
+
+    def create_prices(self, prices):
+        sql_string = """INSERT INTO price(article, kod, name, cena, valuta, nalichie, postavchik, img, data_dobavleniya) 
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, CURDATE());"""
+
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                for price in prices:
+
+                    counter = 0
+
+                    prepared_statements = (
+                        price.get('article'),
+                        price.get('kod'),
+                        price.get('name'),
+                        price.get('cena'),
+                        price.get('valuta'),
+                        price.get('nalichie'),
+                        price.get('postavchik'),
+                        price.get('img'),
+                    )
+
+                    cursor.execute(sql_string, prepared_statements)
+
+                    counter += 1
+                    if counter == 10000:
+                        connection.commit()
+                        counter = 0
+                
+                if counter != 0:
+                    connection.commit()
+        finally:
+            if connection:
+                connection.close()
+
+        return False
+
+    def save_prices(self):
+        # clear by supplier
+        self.clear_price_by_supplier(supplier='ТРЕОЛАН')
+
+        # get products count
+        products_count = self.get_active_products_count()
+
+        # get products list
+        offset = 0
+        limit = 10000
+        steps = math.ceil(products_count / limit)
+
+        for step in range(steps):
+            offset = limit*step
+            product_list = self.get_active_products(limit=limit, offset=offset)
+
+            price_list = [{
+                'article': product_dict.get('prid'), 
+                'kod': product_dict.get('articul'), 
+                'name': product_dict.get('name'), 
+                'cena': product_dict.get('price'), 
+                'valuta': product_dict.get('currency'), 
+                'nalichie': product_dict.get('freenom'), 
+                'postavchik': 'ТРЕОЛАН', 
+                'img': product_dict.get('url'), 
+             } for product_dict in product_list]
+
+            # create
+            self.create_prices(prices=price_list)
