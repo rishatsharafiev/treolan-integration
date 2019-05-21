@@ -409,8 +409,8 @@ class TreoplanSoapApi:
             product_list = self.get_active_products(limit=limit, offset=offset)
 
             price_list = [{
-                'article': product_dict.get('prid'), 
-                'kod': product_dict.get('articul'), 
+                'article': product_dict.get('articul'), 
+                'kod': product_dict.get('prid'), 
                 'name': product_dict.get('name'), 
                 'cena': product_dict.get('price'), 
                 'valuta': product_dict.get('currency'), 
