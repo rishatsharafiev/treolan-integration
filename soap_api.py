@@ -8,7 +8,7 @@ from lxml import etree
 # imports
 import settings
 from utils.db import get_connection
-
+import time
 # logging
 # import logging.config
 # logging.config.dictConfig({
@@ -40,7 +40,7 @@ class TreoplanSoapApi:
     password = settings.TREOLAN_PASSWORD
 
     def get_client(self):
-        transport = Transport(timeout=120, operation_timeout=120)
+        transport = Transport(timeout=150, operation_timeout=150)
         settings = Settings(strict=False, xml_huge_tree=True)
         self.client = Client(self.wsdl, transport=transport, settings=settings)
 
@@ -78,6 +78,30 @@ class TreoplanSoapApi:
         self.mark_all_as_inactive()
         
         return positions
+
+    def get_image(self, articul):
+        params = {
+            'Login': self.login,
+            'password': self.password,
+            'Articul': articul,
+        }
+
+        response = self.client.service.ProductInfoV2(**params)
+        pictures = response.findall('.//PictureLink/row')
+        pictures = list(filter(lambda picture: picture.get('ImageSize') == 'bigimage', pictures))
+
+        try:
+            return pictures[0].get('Link')
+        except IndexError:
+            return ''
+
+    def save_images(self):
+        articuls = self.get_products_without_images()
+
+        for articul in articuls:
+            url = self.get_image(articul)
+            self.create_image(articul, url)
+            time.sleep(0.01)
 
     def mark_all_as_deleted(self):
         sql_string = "UPDATE treoplan_product SET is_deleted=TRUE;"
@@ -183,6 +207,54 @@ class TreoplanSoapApi:
                 
                 if counter != 0:
                     connection.commit()
+        finally:
+            if connection:
+                connection.close()
+
+        return False
+
+    def get_products_without_images(self, limit=1000):
+        sql_string = """SELECT `treoplan_product`.`articul` FROM `treoplan_product` 
+            LEFT JOIN `treoplan_image` ON `treoplan_product`.`articul` = `treoplan_image`.`articul` 
+            WHERE `treoplan_image`.`url` IS NULL LIMIT %s;"""
+        
+        prepared_statements = (
+            limit,
+        )
+
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                cursor.execute(sql_string, prepared_statements)
+                products = cursor.fetchall()
+
+                return [product[0] for product in products]
+        finally:
+            if connection:
+                connection.close()
+
+        return False
+
+    def create_image(self, articul: str, url: str):
+        sql_string = "INSERT INTO treoplan_image(url, articul) VALUES (%s, %s);"
+
+        prepared_statements = (
+            url,
+            articul,
+        )
+
+        connection = None
+
+        try:
+            connection = get_connection()
+
+            with connection.cursor() as cursor:
+                cursor.execute(sql_string, prepared_statements)
+                connection.commit()
+                return cursor.lastrowid
         finally:
             if connection:
                 connection.close()

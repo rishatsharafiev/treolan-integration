@@ -13,7 +13,8 @@ MYSQL_DATABASE = env('MYSQL_DATABASE', cast=str)
 
 DEBUG_LEVEL = env('DEBUG_LEVEL', cast=str, default='DEBUG')
 
-TREOLAN_WDSL = env('TREOLAN_WDSL', cast=str, default='https://api.treolan.ru/webservices/treolan.wsdl') 
+TREOLAN_WDSL = env('TREOLAN_WDSL', cast=str, default='https://api.treolan.ru/webservices/treolan.wsdl')
+TREOLAN_WDSL_PRODUCT_INFO = env('TREOLAN_WDSL_PRODUCT_INFO', cast=str, default='https://api.treolan.ru/webservice2008/Service.asmx?wsdl')
 TREOLAN_LOGIN = env('TREOLAN_LOGIN', cast=str) 
 TREOLAN_PASSWORD = env('TREOLAN_PASSWORD', cast=str) 
 
